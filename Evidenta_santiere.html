@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Evidență Șantiere</title>
+<style>
+:root{--bg:#f6f5f1;--fg:#1d1d1b;--card:#fff;--mut:#6b6a63;--bd:#dedbd0;--ac:#c2570c;--on:#fff;--bad:#b3261e;--ok:#2e7d32;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171715;--fg:#efede6;--card:#222220;--mut:#a09e94;--bd:#3a3935;--ac:#f08a3c;--on:#1a1a18;--bad:#ff8a80;--ok:#81c784}}
+:root[data-theme="dark"]{--bg:#171715;--fg:#efede6;--card:#222220;--mut:#a09e94;--bd:#3a3935;--ac:#f08a3c;--on:#1a1a18;--bad:#ff8a80;--ok:#81c784}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+#app{max-width:1000px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:0}h2{font-size:17px;margin:0 0 10px}h3{font-size:14px;margin:14px 0 6px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button{background:var(--card);color:var(--fg);border:1px solid var(--bd)}
+.tabs button.on{background:var(--ac);color:var(--on);border-color:var(--ac)}
+button{font:inherit;background:var(--ac);color:var(--on);border:0;border-radius:7px;padding:8px 13px;cursor:pointer}
+button.sec{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+button.sm{padding:3px 8px;font-size:13px}
+input,select,textarea{font:inherit;width:100%;padding:8px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--fg)}
+label{display:block;font-size:13px;color:var(--mut);margin-bottom:8px}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.row{display:grid;grid-template-columns:2fr 1fr auto;gap:8px;margin-bottom:6px;align-items:center}
+.w{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}th{color:var(--mut);font-weight:600;font-size:12px}
+.mut{color:var(--mut)}.bad{color:var(--bad);font-weight:600}.ok{color:var(--ok)}
+.auth{max-width:380px;margin:40px auto}
+.ent{border-bottom:1px solid var(--bd);padding:10px 0}.ent:last-child{border:0}
+</style></head><body><div id="app"></div>
+<script>
+/* ============================================================
+   CONFIGURARE (versiunea de sine stătătoare, în afara Claude)
+   - FIREBASE_CONFIG = null  -> mod LOCAL: datele rămân în browserul acesta.
+   - FIREBASE_CONFIG = {...} -> mod ONLINE: datele sunt comune pentru toți
+     utilizatorii, de pe orice browser/telefon (Firebase Firestore, gratuit).
+   ============================================================ */
+const FIREBASE_CONFIG = null;
+/* exemplu:
+const FIREBASE_CONFIG = {
+  apiKey: "AIza...", authDomain: "proiect.firebaseapp.com", projectId: "proiect"
+};
+*/
+</script>
+<script>
+(function(){
+  var memStore={};
+  var ls={get:function(k){try{return localStorage.getItem(k)}catch(e){return memStore[k]||null}},
+          set:function(k,v){try{localStorage.setItem(k,v)}catch(e){memStore[k]=v}}};
+  var P='sant:';
+  function localDb(){
+    var subs={};
+    function load(n){try{return JSON.parse(ls.get(P+n)||'{}')}catch(e){return {}}}
+    function save(n,o){ls.set(P+n,JSON.stringify(o))}
+    function emit(n){var o=load(n);var docs=Object.keys(o).map(function(id){return {id:id,data:function(){return JSON.parse(JSON.stringify(o[id]))}}});(subs[n]||[]).forEach(function(f){f({docs:docs})})}
+    window.addEventListener('storage',function(e){if(e.key&&e.key.indexOf(P)===0)emit(e.key.slice(P.length))});
+    return {collection:function(n){return {
+      doc:function(id){return {
+        set:async function(d){var o=load(n);o[id]=JSON.parse(JSON.stringify(d));save(n,o);emit(n)},
+        update:async function(d){var o=load(n);if(!o[id])throw new Error('Documentul nu există');o[id]=Object.assign({},o[id],JSON.parse(JSON.stringify(d)));save(n,o);emit(n)},
+        delete:async function(){var o=load(n);delete o[id];save(n,o);emit(n)}
+      }},
+      onSnapshot:function(cb){(subs[n]=subs[n]||[]).push(cb);setTimeout(function(){emit(n)},0);return function(){subs[n]=subs[n].filter(function(f){return f!==cb})}}
+    }}};
+  }
+  function loadScript(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.onload=res;s.onerror=function(){rej(new Error('Nu s-a putut încărca '+src))};document.head.appendChild(s)})}
+  async function fbDb(cfg){
+    var v='10.12.2';
+    await loadScript('https://www.gstatic.com/firebasejs/'+v+'/firebase-app-compat.js');
+    await loadScript('https://www.gstatic.com/firebasejs/'+v+'/firebase-firestore-compat.js');
+    firebase.initializeApp(cfg);
+    var f=firebase.firestore();
+    f.settings({ignoreUndefinedProperties:true});
+    try{await f.enablePersistence({synchronizeTabs:true})}catch(e){}
+    return f;
+  }
+  var dbP=null;
+  function getDb(){
+    if(!dbP)dbP=(async function(){
+      var online=typeof FIREBASE_CONFIG!=='undefined'&&FIREBASE_CONFIG;
+      if(!online){document.addEventListener('DOMContentLoaded',function(){var b=document.createElement('div');b.textContent='Mod local: datele sunt salvate doar în acest browser.';b.style.cssText='position:fixed;left:0;right:0;bottom:0;background:#c2570c;color:#fff;font:12px system-ui;text-align:center;padding:3px;z-index:50;opacity:.9';b.onclick=function(){b.remove()};document.body.appendChild(b)});return localDb()}
+      return fbDb(FIREBASE_CONFIG);
+    })();
+    return dbP;
+  }
+  var DL={save:async function(o){
+    var t=/\.svg$/i.test(o.filename)?'image/svg+xml':/\.csv$/i.test(o.filename)?'text/csv;charset=utf-8':'text/html;charset=utf-8';
+    var url=URL.createObjectURL(new Blob([o.data],{type:t}));
+    var a=document.createElement('a');a.href=url;a.download=o.filename;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){URL.revokeObjectURL(url)},2000);
+  }};
+  window.claude={use:async function(n){return n==='db'?await getDb():DL}};
+})();
+</script>
+<script>
+const $=s=>document.querySelector(s),app=$('#app');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sid=s=>String(s).trim().replace(/[^A-Za-z0-9_.-]/g,'-');
+const num=v=>{const n=parseFloat(String(v).replace(',','.'));return isNaN(n)?0:n};
+const fmt=n=>Math.round(n*1000)/1000;
+const S={users:[],sites:[],mats:[],stock:[],entries:[],orders:[],moves:[]},KEYS={users:'users',sites:'sites',materials:'mats',stock:'stock',entries:'entries',orders:'orders',moves:'moves'};
+const loaded={};let db=null,me=null,tab='raport',lastKey='',rowsSig='',draft=[{code:'',qty:''}],authTab='in',crew=[{id:'',hours:''}],editId=null,warned='',openSite=null,openEmp=null,openMat=null,rmode='emp';
+const today=()=>new Date().toISOString().slice(0,10);
+const sget=()=>{try{return localStorage.getItem('u')}catch(e){return null}};
+const sset=v=>{try{v?localStorage.setItem('u',v):localStorage.removeItem('u')}catch(e){}};
+async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+const isAdmin=()=>me&&me.role==='admin';
+const mat=c=>S.mats.find(m=>m.code===c);
+const locName=l=>l==='dep'?'Depozit':(S.sites.find(s=>s.id===l)||{}).name||l;
+const qtyAt=(c,l)=>(S.stock.find(r=>r.id===sid(c)+'__'+l)||{}).qty||0;
+const totQ=c=>S.stock.filter(r=>r.code===c).reduce((a,r)=>a+r.qty,0);
+const legacy=m=>fmt((m.ordered||0)-S.orders.filter(o=>o.code===m.code).reduce((a,o)=>a+Math.max(0,o.qty-o.rec),0));
+const recvOpts=()=>{const l=openOrders().map(o=>[o.id,o.no+' — '+o.code+' '+mat(o.code).name+': rămas '+fmt(o.qty-o.rec)+' '+mat(o.code).unit]);S.mats.forEach(m=>{const q=legacy(m);if(q>1e-9)l.push(['leg::'+m.code,'Fără număr — '+m.code+' '+m.name+': rămas '+fmt(q)+' '+m.unit])});return l};
+const openOrders=()=>S.orders.filter(o=>o.qty-o.rec>1e-9&&mat(o.code)).sort((a,b)=>(a.date+a.no).localeCompare(b.date+b.no));
+function ordRow(c){const m=mat(c),os=S.orders.filter(o=>o.code===c).sort((a,b)=>(a.date+a.no).localeCompare(b.date+b.no));
+  const open=os.reduce((a,o)=>a+Math.max(0,o.qty-o.rec),0),leg=fmt((m.ordered||0)-open);
+  if(!os.length&&!(leg>0))return '';
+  return `<tr><td></td><td colspan="9" class="mut" style="white-space:normal"><b>Comenzi:</b> ${os.map(o=>`<b>${esc(o.no)}</b> (${esc(o.date)}): comandat ${fmt(o.qty)}, recepționat ${fmt(o.rec)}${(o.docs||[]).length?' ('+o.docs.map(d=>esc(d.doc)).join('; ')+')':''}, rămas ${fmt(Math.max(0,o.qty-o.rec))} ${esc(m.unit)}`).join(' · ')}${leg>0?(os.length?' · ':'')+'fără nr. comandă: '+leg+' '+esc(m.unit):''}</td></tr>`}
+const used=(c,site)=>S.entries.filter(e=>e.site===site).reduce((a,e)=>a+(e.mats||[]).filter(m=>m.code===c).reduce((b,m)=>b+m.qty,0),0);
+async function setStock(c,l,delta){await db.collection('stock').doc(sid(c)+'__'+l).set({code:c,loc:l,qty:fmt(qtyAt(c,l)+delta)})}
+async function logMove(o){await db.collection('moves').doc('m'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)).set({date:today(),ts:new Date().toISOString(),...o})}
+async function applyDeltas(list){const m={};list.forEach(([c,l,d])=>{const k=c+'\u0001'+l;m[k]=(m[k]||0)+d});for(const k in m){const [c,l]=k.split('\u0001');if(m[k])await setStock(c,l,m[k])}}
+function fill(el,items,ph){if(!el)return;const v=el.value;el.innerHTML=(ph!=null?`<option value="">${esc(ph)}</option>`:'')+items.map(i=>`<option value="${esc(i[0])}">${esc(i[1])}</option>`).join('');if([...el.options].some(o=>o.value===v))el.value=v}
+const siteOpts=()=>S.sites.map(s=>[s.id,s.name]);
+const matOpts=()=>S.mats.map(m=>[m.code,m.code+' — '+m.name+' ('+m.unit+')']);
+const locOpts=()=>[['dep','Depozit'],...siteOpts()];
+
+function dlg(title,fields,okText,msg){return new Promise(res=>{
+  const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:99';
+  o.innerHTML=`<div class="card" style="max-width:420px;width:100%;margin:0"><h2>${esc(title)}</h2>${msg?`<p>${esc(msg)}</p>`:''}${fields.map((f,i)=>`<label>${esc(f.label)}<input data-k="${i}" value="${esc(f.val??'')}"></label>`).join('')}<div style="display:flex;gap:8px;justify-content:flex-end"><button class="sec" data-x="0">Anulează</button><button data-x="1">${esc(okText||'OK')}</button></div></div>`;
+  document.body.appendChild(o);const ins=[...o.querySelectorAll('input')];if(ins[0])ins[0].focus();
+  const done=v=>{o.remove();res(v)};
+  o.onclick=e=>{const x=e.target.dataset.x;if(x==='0'||e.target===o)done(null);if(x==='1')done(ins.map(i=>i.value))};
+  o.onkeydown=e=>{if(e.key==='Enter'&&ins.length)done(ins.map(i=>i.value));if(e.key==='Escape')done(null)};
+})}
+const yes=async(m,ok)=>(await dlg('Confirmare',[],ok||'Da',m))!==null;
+const info=m=>dlg('Atenție',[],'OK',m);
+async function init(){
+  db=window.claude?await claude.use('db'):null;
+  if(!db){app.innerHTML='<div class="card auth"><h2>Aplicația nu poate porni</h2><p class="mut">Deschide pagina din contul tău claude.ai, cu drept de editare.</p></div>';return}
+  for(const n in KEYS)db.collection(n).onSnapshot(s=>{S[KEYS[n]]=s.docs.map(d=>({id:d.id,...d.data()}));loaded[n]=1;if(n==='users'&&me)me=S.users.find(u=>u.id===me.id)||null;render()});
+}
+
+function render(){
+  if(!loaded.users){app.innerHTML='<p class="mut">Se încarcă…</p>';return}
+  if(!me){const sv=sget();if(sv)me=S.users.find(u=>u.id===sv)||null}
+  if(!me){const k='auth'+authTab;if(lastKey!==k){authView();lastKey=k}return}
+  if(tab==='users'&&!isAdmin())tab='raport';
+  const k='main'+me.id+me.role+tab;
+  if(lastKey!==k){shell();lastKey=k;rowsSig=''}
+  data();
+}
+function authView(){
+  const reg=authTab==='up';
+  app.innerHTML=`<div class="card auth"><h1>Evidență Șantiere</h1>
+  <div class="tabs" style="margin:12px 0"><button class="${reg?'':'on'}" data-a="at" data-v="in">Autentificare</button><button class="${reg?'on':''}" data-a="at" data-v="up">Cont nou</button></div>
+  ${reg?'<label>Nume complet<input id="an"></label>':''}
+  <label>Utilizator (login)<input id="au" autocomplete="username" autocapitalize="off"></label>
+  <label>Parolă${reg?' (minim 6 caractere)':''}<input id="ap" type="password" autocomplete="${reg?'new-password':'current-password'}"></label>
+  <p id="am" class="bad"></p><button data-a="${reg?'reg':'login'}" style="width:100%">${reg?'Creează cont':'Intră'}</button>
+  ${reg&&!S.users.length?'<p class="mut">Primul cont creat devine administrator.</p>':''}</div>`;
+}
+function shell(){
+  const tabs=[['raport','Raport zilnic'],['stoc','Stocuri'],['santiere','Șantiere'],['istoric','Istoric'],['rapoarte','Rapoarte'],...(isAdmin()?[['users','Utilizatori']]:[])];
+  let body='';
+  if(tab==='raport')body=`<div class="card"><h2 id="rtitle">Raport zilnic</h2>
+  <div class="g"><label>Șantier<select id="rs"></select></label><label>Data<input type="date" id="rd" value="${today()}"></label></div><h3>Angajați și ore lucrate</h3><div id="rc"></div><button class="sec sm" data-a="addcrew">+ Angajat</button> <span id="rt" class="mut"></span>
+  <label>Operațiuni efectuate<textarea id="ro" rows="4"></textarea></label>
+  <h3>Materiale folosite</h3><div id="rm"></div><button class="sec sm" data-a="addrow">+ Material</button>
+  <p id="rmsg"></p><button id="rsave" data-a="save">Salvează raportul</button> <button id="rcancel" class="sec" data-a="cancel" style="display:none">Renunță</button></div>`;
+  if(tab==='stoc')body=`<div class="card"><div class="bar"><h2 style="margin:0">Evidența stocurilor</h2><select id="sf" style="width:auto"></select></div><div class="w" id="st"></div></div>
+  ${isAdmin()?`<div class="card"><h3 style="margin-top:0">Material nou</h3><div class="g"><label>Cod<input id="mc"></label><label>Denumire<input id="mn"></label><label>U.M.<input id="mu" placeholder="buc, kg, m, sac"></label><label>Cantitate comandată<input id="mo" inputmode="decimal"></label></div><button data-a="addmat">Adaugă material</button>
+  <h3>Intrare stoc</h3><div class="g"><label>Material<select id="im"></select></label><label>Locație<select id="il"></select></label><label>Cantitate<input id="iq" inputmode="decimal"></label><label>Document achiziție<select id="idt"><option value="">— alege —</option><option>Bon fiscal</option><option>Chitanță</option><option>Factură</option></select></label><label>Nr. document<input id="idn"></label></div><button data-a="addstock">Adaugă în stoc</button>
+  <h3>Comandă material (adaugă în Comandată)</h3><div class="g"><label>Număr comandă<input id="cno" placeholder="ex: CMD-001 (opțional)"></label><label>Material<select id="com"></select></label><label>Cantitate<input id="coq" inputmode="decimal"></label></div><button data-a="order">Adaugă în Comandată</button>
+  <h3>Recepție după număr de comandă (intră direct în Depozit și în Cant. actuală)</h3><div class="g"><label>Număr comandă<select id="rcm"></select></label><label>Cantitate primită<input id="rcq" inputmode="decimal" placeholder="implicit: tot ce a rămas"></label><label>Document achiziție<select id="rdt"><option value="">— alege —</option><option>Bon fiscal</option><option>Chitanță</option><option>Factură</option></select></label><label>Nr. document<input id="rdn"></label></div><button data-a="recv">Recepționează</button><p id="smsg"></p></div>`:''}<div class="card"><h3 style="margin-top:0">Mutare material între locații</h3><div class="g"><label>Material<select id="mm"></select></label><label>Din<select id="mf"></select></label><label>În<select id="mt"></select></label><label>Cantitate<input id="mq" inputmode="decimal"></label></div><button data-a="move">Mută</button><p id="smsg3"></p></div>`;
+  if(tab==='santiere')body=`${isAdmin()?`<div class="card" id="sncard"><h2>Șantier nou</h2><div class="g"><label>Denumire șantier<input id="sn"></label></div><button data-a="addsite">Creează șantier</button></div>`:''}<div id="sg"></div>`;
+  if(tab==='istoric')body=`<div class="card"><h2>${isAdmin()?'Toate rapoartele':'Rapoartele mele'}</h2><div id="ih"></div></div>`;
+  if(tab==='rapoarte')body=`<div class="tabs"><button data-a="rm" data-v="emp">Raport angajați</button><button data-a="rm" data-v="mat">Raport materiale</button></div><div class="card"><h2 id="rtt"></h2><div class="g"><label id="lfe">Angajat<select id="fe"></select></label><label>Șantier<select id="fs"></select></label><label>De la<input type="date" id="fd1"></label><label>Până la<input type="date" id="fd2"></label><label id="lfm">Material<select id="fm"></select></label><label>Operațiune (conține)<input id="fo" placeholder="ex: zidărie"></label></div><button class="sec sm" data-a="csv">Descarcă CSV (Excel)</button><p id="rpm"></p></div><div class="card"><h2>Grafic și detalii</h2><div class="g"><label id="lcm">Măsoară<select id="cm"><option value="ore">Ore lucrate</option><option value="mat">Cantitate material folosit</option></select></label><label>Grupează după<select id="cg"><option value="emp">Angajat</option><option value="site">Șantier</option><option value="mat">Material</option><option value="day">Zi</option><option value="week">Săptămână</option><option value="month">Lună</option><option value="ops">Operațiune</option></select></label><label>Împarte pe (opțional)<select id="cg2"><option value="">— fără —</option><option value="emp">Angajat</option><option value="site">Șantier</option><option value="mat">Material</option><option value="day">Zi</option><option value="week">Săptămână</option><option value="month">Lună</option><option value="ops">Operațiune</option></select></label><label>Tip grafic<select id="ct"><option value="bar">Bare</option><option value="line">Linie</option><option value="pie">Plăcintă</option></select></label></div><div class="w" id="ch"></div><div class="w" id="cd" style="margin-top:10px"></div><button class="sec sm" data-a="svgdl">Descarcă imaginea (SVG)</button><p id="cmsg"></p></div><div id="rp"></div>`;
+  if(tab==='users')body=`<div class="card"><h2>Utilizatori</h2><div class="w" id="ul"></div></div>`;
+  app.innerHTML=`<div class="bar"><h1>Evidență Șantiere</h1><div><span class="mut">${esc(me.name)} · ${me.role==='admin'?'administrator':'angajat'}</span> <button class="sec sm" data-a="logout">Ieșire</button></div></div>
+  <div class="tabs">${tabs.map(t=>`<button class="${t[0]===tab?'on':''}" data-a="tab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>${body}`;
+  const f=$('#sf');if(f)f.onchange=stTable;if(tab==='rapoarte'){$('#fd1').value=today().slice(0,8)+'01';$('#fd2').value=today();['#fe','#fs','#fd1','#fd2','#fm','#cm','#cg','#cg2','#ct'].forEach(s=>$(s).onchange=rap);$('#fo').oninput=rap}
+}
+function data(){
+  if(tab==='raport'){fill($('#rs'),siteOpts(),'— alege șantierul —');$('#rtitle').textContent=editId?'Modifică raportul':'Raport zilnic';$('#rsave').textContent=warned?'Salvează oricâum':(editId?'Salvează modificările':'Salvează raportul');$('#rcancel').style.display=editId?'':'none';
+    const sig=S.mats.map(m=>m.code).join()+'|'+S.users.map(u=>u.id).join()+'|'+draft.length+'|'+crew.length;if(sig!==rowsSig){rowsSig=sig;rows()}}
+  if(tab==='stoc'){fill($('#sf'),[['*','Toate locațiile'],...locOpts()]);stTable();
+    fill($('#mm'),matOpts());fill($('#mf'),locOpts());fill($('#mt'),locOpts());if(isAdmin()){fill($('#im'),matOpts());fill($('#il'),locOpts());fill($('#com'),matOpts());fill($('#rcm'),recvOpts())}}
+  if(tab==='santiere')sites();
+  if(tab==='istoric')hist();
+  if(tab==='rapoarte'){fill($('#fe'),isAdmin()?[['*','Toți angajații'],...S.users.map(u=>[u.id,u.name])]:[[me.id,me.name]]);fill($('#fs'),[['*','Toate șantierele'],...siteOpts()]);fill($('#fm'),[['*','Toate materialele'],...S.mats.map(m=>[m.code,m.code+' — '+m.name])]);rap()}
+  if(tab==='users')usersT();
+}
+function tot(){const e=$('#rt');if(e)e.textContent='Total: '+fmt(crew.reduce((a,c)=>a+num(c.hours),0))+' ore'}
+function resetForm(){editId=null;warned='';draft=[{code:'',qty:''}];crew=[{id:me?me.id:'',hours:''}];rowsSig='';if(tab==='raport'){$('#ro').value='';$('#rd').value=today();$('#rs').value='';data()}}
+function crewRows(){
+  const ids=[...S.users.map(u=>[u.id,u.name]),...crew.filter(c=>c.id&&!S.users.some(u=>u.id===c.id)).map(c=>[c.id,c.id])];
+  if(crew.length===1&&!crew[0].id&&!crew[0].hours&&me&&!editId)crew[0].id=me.id;
+  $('#rc').innerHTML=crew.map((c,i)=>`<div class="row"><select data-i="${i}" class="dc"><option value="">— angajat —</option>${ids.map(u=>`<option value="${esc(u[0])}"${u[0]===c.id?' selected':''}>${esc(u[1])}</option>`).join('')}</select><input data-i="${i}" class="dh" inputmode="decimal" placeholder="Ore" value="${esc(c.hours)}"><button class="sec sm" data-a="delcrew" data-i="${i}">✕</button></div>`).join('');tot()}
+function rows(){crewRows();
+  $('#rm').innerHTML=draft.map((r,i)=>`<div class="row"><select data-i="${i}" class="dm"><option value="">— material —</option>${S.mats.map(m=>`<option value="${esc(m.code)}"${m.code===r.code?' selected':''}>${esc(m.code+' — '+m.name+' ('+m.unit+')')}</option>`).join('')}</select><input data-i="${i}" class="dq" inputmode="decimal" placeholder="Cantitate" value="${esc(r.qty)}"><button class="sec sm" data-a="delrow" data-i="${i}">✕</button></div>`).join('')||'<p class="mut">Niciun material.</p>';
+}
+function stTable(){
+  const el=$('#st');if(!el)return;const f=$('#sf').value||'*';
+  let r=S.stock.filter(x=>(f==='*'||x.loc===f)&&mat(x.code)).map(x=>({code:x.code,loc:x.loc,qty:x.qty}));
+  if(f==='*'||f==='dep')S.mats.forEach(m=>{if(!r.some(x=>x.code===m.code&&x.loc==='dep'))r.push({code:m.code,loc:'dep',qty:0})});
+  r.sort((a,b)=>a.code.localeCompare(b.code)||a.loc.localeCompare(b.loc));
+  const matSum=x=>{const g=r.filter(y=>y.code===x.code);if(g.length<2)return '';const m=mat(x.code),d=g.some(y=>y.loc==='dep');
+    return `<tr style="font-weight:700;background:var(--bg)"><td></td><td>Sumar</td><td>${esc(m.unit)}</td><td>${d?fmt(totQ(x.code)):''}</td><td></td><td>${fmt(g.reduce((t,y)=>t+y.qty,0))}</td><td>${d?fmt(m.ordered||0):''}</td><td>${d?fmt(m.received||0):''}</td><td>${fmt(g.reduce((t,y)=>t+used(y.code,y.loc),0))}</td>${isAdmin()?'<td></td>':''}</tr>`};
+  el.innerHTML=`<table><tr><th>Cod</th><th>Denumire</th><th>U.M.</th><th>Cant. actuală (total)</th><th>Locație</th><th>Disponibil în locație</th><th>Comandată</th><th>Recepționată</th><th>Folosit aici</th>${isAdmin()?'<th></th>':''}</tr>${r.map((x,i)=>{const m=mat(x.code);return `<tr><td>${esc(x.code)}</td><td>${esc(m.name)}</td><td>${esc(m.unit)}</td><td>${x.loc==='dep'?`<b>${fmt(totQ(x.code))}</b>`:''}</td><td>${esc(locName(x.loc))}</td><td class="${x.qty<0?'bad':''}">${fmt(x.qty)}</td><td>${x.loc==='dep'?fmt(m.ordered||0):''}</td><td>${x.loc==='dep'?fmt(m.received||0):''}</td><td>${fmt(used(x.code,x.loc))}</td>${isAdmin()?`<td><button class="sec sm" data-a="editmat" data-c="${esc(x.code)}">Modifică</button> <button class="sec sm" data-a="setq" data-c="${esc(x.code)}" data-l="${esc(x.loc)}">Corectează cant.</button> <button class="sec sm" data-a="delmat" data-c="${esc(x.code)}">Șterge</button></td>`:''}</tr>${(r[i+1]&&r[i+1].code===x.code)?'':matSum(x)+((f==='*'||f==='dep')?ordRow(x.code):'')}`}).join('')||'<tr><td colspan="10" class="mut">Niciun material.</td></tr>'}</table>`;
+}
+function sites(){
+  const nc=$('#sncard');if(nc)nc.style.display=openSite?'none':'';
+  if(openSite&&!S.sites.find(s=>s.id===openSite))openSite=null;
+  const sg=$('#sg'),crewOf=e=>e.crew||[{id:e.user,name:e.userName,hours:e.hours}];
+  const adm=s=>isAdmin()?` <button class="sec sm" data-a="rensite" data-s="${esc(s.id)}">Redenumește</button> <button class="sec sm" data-a="delsite" data-s="${esc(s.id)}">Șterge</button>`:'';
+  if(!openSite){
+    let th=0,tr=0;const emp=new Set();
+    const rows=S.sites.map(s=>{const es=S.entries.filter(e=>e.site===s.id),ppl=new Set(),mt=new Set();let h=0,last='';
+      es.forEach(e=>{crewOf(e).forEach(c=>{ppl.add(c.id);emp.add(c.id);h+=c.hours});(e.mats||[]).forEach(m=>mt.add(m.code));if(e.date>last)last=e.date});
+      th+=h;tr+=es.length;
+      return `<tr><td><b>${esc(s.name)}</b></td><td>${fmt(h)}</td><td>${ppl.size}</td><td>${es.length}</td><td>${mt.size}</td><td>${esc(last||'—')}</td><td><button class="sm" data-a="opens" data-s="${esc(s.id)}">Deschide</button>${adm(s)}</td></tr>`}).join('');
+    sg.innerHTML=`<div class="card"><h2>Sumar general</h2><p class="mut"><b>${S.sites.length}</b> șantiere · <b>${fmt(th)}</b> ore lucrate · <b>${emp.size}</b> angajați · <b>${tr}</b> rapoarte</p><div class="w"><table><tr><th>Șantier</th><th>Ore lucrate</th><th>Angajați</th><th>Rapoarte</th><th>Materiale folosite</th><th>Ultima activitate</th><th></th></tr>${rows||'<tr><td colspan="7" class="mut">Nu există șantiere. Doar administratorul le poate crea.</td></tr>'}</table></div></div>`;
+    return}
+  const s=S.sites.find(x=>x.id===openSite),es=S.entries.filter(e=>e.site===s.id).sort((a,b)=>a.date.localeCompare(b.date));
+  const by={};es.forEach(e=>crewOf(e).forEach(c=>{(by[c.id]=by[c.id]||{name:c.name||c.id,rows:[]}).rows.push({date:e.date,hours:c.hours,ops:e.ops,mats:e.mats||[]})}));
+  const mtxt=ms=>ms.map(m=>esc(m.code)+' '+esc((mat(m.code)||{}).name||'')+': <b>'+fmt(m.qty)+'</b> '+esc((mat(m.code)||{}).unit||'')).join('<br>')||'—';
+  const hsum=p=>p.rows.reduce((a,r)=>a+r.hours,0),ppl=Object.values(by);
+  const codes=[...new Set([...S.stock.filter(r=>r.loc===s.id).map(r=>r.code),...es.flatMap(e=>(e.mats||[]).map(m=>m.code))])].filter(mat).sort();
+  const inn=S.moves.filter(m=>m.to===s.id).sort((a,b)=>(b.ts||'').localeCompare(a.ts||'')),how=m=>m.type==='achizitie'?'Achiziție directă'+(m.doc?' — '+esc(m.doc):''):m.type==='mutare'?'Mutare din '+esc(locName(m.from)):'Recepție comandă '+esc(m.order||'')+(m.doc?' — '+esc(m.doc):'');
+  const modes=c=>S.moves.filter(m=>m.to===s.id&&m.code===c).sort((a,b)=>(a.ts||'').localeCompare(b.ts||'')).map(m=>how(m)+' ('+fmt(m.qty)+', '+esc(m.date)+')').join('<br>')||'—';
+  const movCard=`<div class="card"><h2>Cum a intrat materialul pe șantier</h2><div class="w"><table><tr><th>Data</th><th>Material</th><th>Cantitate</th><th>Mod de intrare</th></tr>${inn.map(m=>`<tr><td>${esc(m.date)}</td><td>${esc(m.code)} ${esc((mat(m.code)||{}).name||'')}</td><td>${fmt(m.qty)} ${esc((mat(m.code)||{}).unit||'')}</td><td>${how(m)}</td></tr>`).join('')||'<tr><td colspan="4" class="mut">Nicio intrare înregistrată (intrările de dinainte de această funcție nu au istoric).</td></tr>'}</table></div></div>`;
+  sg.innerHTML=`<div class="bar"><button class="sec" data-a="sback">← Toate șantierele</button></div>
+  <div class="card"><div class="bar"><h2 style="margin:0">${esc(s.name)}</h2><span>${adm(s)}</span></div><p class="mut"><b>${fmt(ppl.reduce((a,p)=>a+hsum(p),0))}</b> ore lucrate · <b>${ppl.length}</b> angajați · <b>${es.length}</b> rapoarte</p></div>`
+  +(ppl.map(p=>`<div class="card"><div class="bar"><h2 style="margin:0">${esc(p.name)}</h2><b>${fmt(hsum(p))} ore</b></div><div class="w"><table><tr><th>Data</th><th>Ore</th><th>Lucrări efectuate</th><th>Materiale folosite (raportul zilei)</th></tr>${p.rows.map(r=>`<tr><td>${esc(r.date)}</td><td>${fmt(r.hours)}</td><td style="white-space:normal;min-width:200px">${esc(r.ops)}</td><td style="white-space:normal">${mtxt(r.mats)}</td></tr>`).join('')}</table></div></div>`).join('')||'<div class="card mut">Niciun raport pe acest șantier încă.</div>')
+  +movCard+`<div class="card"><h2>Materiale pe șantier</h2><div class="w"><table><tr><th>Cod</th><th>Denumire</th><th>U.M.</th><th>Folosit</th><th>Rămas pe șantier</th><th>Mod de intrare</th></tr>${codes.map(c=>{const m=mat(c),q=qtyAt(c,s.id);return `<tr><td>${esc(c)}</td><td>${esc(m.name)}</td><td>${esc(m.unit)}</td><td>${fmt(used(c,s.id))}</td><td class="${q<0?'bad':''}">${fmt(q)}</td><td style="white-space:normal">${modes(c)}</td></tr>`}).join('')||'<tr><td colspan="6" class="mut">Fără materiale încă.</td></tr>'}</table></div></div>`;
+}
+function hist(){
+  const list=S.entries.filter(e=>isAdmin()||e.user===me.id).sort((a,b)=>(b.date+b.ts).localeCompare(a.date+a.ts));
+  $('#ih').innerHTML=list.map(e=>`<div class="ent"><b>${esc(e.date)}</b> · ${esc(locName(e.site))} · ${fmt(e.hours)} ore<div class="mut">${e.crew?e.crew.map(c=>esc(c.name)+' '+fmt(c.hours)+' h').join(', '):esc(e.userName)}</div><div>${esc(e.ops)}</div><div class="mut">${(e.mats||[]).map(m=>esc(m.code)+': '+fmt(m.qty)+' '+esc((mat(m.code)||{}).unit||'')).join(', ')||'fără materiale'}</div>${(isAdmin()||e.user===me.id)?`<div style="margin-top:6px"><button class="sec sm" data-a="eent" data-e="${e.id}">Modifică</button> <button class="sec sm" data-a="dent" data-e="${e.id}">Șterge</button></div>`:''}</div>`).join('')||'<p class="mut">Niciun raport.</p>';
+}
+let lastSvg='';
+const PAL=['#c2570c','#2a6f97','#5a8f29','#8e44ad','#d4a017','#16a085','#c0392b','#34495e','#e67e22','#7f8c8d','#d81b60','#00838f'];
+const GL={emp:'Angajat',site:'Șantier',mat:'Material',day:'Zi',week:'Săptămână',month:'Lună',ops:'Operațiune'};
+const monday=d=>{const t=new Date(d+'T00:00:00Z'),w=(t.getUTCDay()+6)%7;t.setUTCDate(t.getUTCDate()-w);return t.toISOString().slice(0,10)};
+const timeG=g=>g==='day'||g==='week'||g==='month';
+const gkey=(g,x)=>g==='emp'?x.emp:g==='site'?locName(x.site):g==='day'?x.date:g==='week'?'Săpt. '+monday(x.date):g==='month'?x.date.slice(0,7):((x.ops||'').slice(0,30)||'(fără descriere)');
+function chartItems(){
+  const fe=$('#fe').value,fs=$('#fs').value,d1=$('#fd1').value,d2=$('#fd2').value,fo=($('#fo').value||'').trim().toLowerCase(),fm=$('#fm').value,mt=$('#cm').value,out=[];
+  S.entries.forEach(e=>{if(fs!=='*'&&e.site!==fs)return;if(d1&&e.date<d1)return;if(d2&&e.date>d2)return;if(fo&&!(e.ops||'').toLowerCase().includes(fo))return;
+    const ms=(e.mats||[]).filter(m=>mat(m.code)&&(fm==='*'||m.code===fm));if(fm!=='*'&&!ms.length)return;
+    if(mt==='mat'){ms.forEach(m=>out.push({emp:'',site:e.site,date:e.date,ops:e.ops,mat:m.code,v:m.qty}));return}
+    const cr=e.crew||[{id:e.user,name:e.userName,hours:e.hours}],tot=cr.reduce((a,c)=>a+c.hours,0)||1;
+    cr.forEach(c=>{if(!isAdmin()&&c.id!==me.id)return;if(isAdmin()&&fe!=='*'&&c.id!==fe)return;
+      const b={emp:c.name||c.id,site:e.site,date:e.date,ops:e.ops};
+      if(mt==='ore')out.push({...b,mat:'',v:c.hours});else ms.forEach(m=>out.push({...b,mat:m.code,v:m.qty*c.hours/tot}))})});
+  return out}
+function chart(){
+  const el=$('#ch'),cd=$('#cd');if(!el)return;
+  const mt=$('#cm').value,ty=$('#ct').value;let g1=$('#cg').value,g2=$('#cg2').value;
+  if(mt==='mat'&&g1==='emp'){g1='site';$('#cg').value='site'}if(mt==='mat'&&g2==='emp'){g2='';$('#cg2').value=''}
+  if(mt==='ore'&&g1==='mat'){g1='emp';$('#cg').value='emp'}if(mt==='ore'&&g2==='mat'){g2='';$('#cg2').value=''}
+  if(mt==='ore'&&(g1==='mat'||g2==='mat')){lastSvg='';cd.innerHTML='';el.innerHTML='<p class="mut">Gruparea pe material merge doar la „Cantitate material folosit”. Schimbă „Măsoară” sau „Grupează după”.</p>';return}
+  const lab=(g,x)=>g==='mat'?x.mat+' '+((mat(x.mat)||{}).name||''):gkey(g,x),A={},T={},SR={};
+  chartItems().forEach(x=>{const a=lab(g1,x),b=g2?lab(g2,x):'Total';(A[a]=A[a]||{})[b]=(A[a][b]||0)+x.v;T[a]=(T[a]||0)+x.v;SR[b]=(SR[b]||0)+x.v});
+  let cats=Object.keys(A);cats=timeG(g1)?cats.sort():cats.sort((a,b)=>T[b]-T[a]);
+  const ser=Object.keys(SR).sort((a,b)=>SR[b]-SR[a]);
+  if(!cats.length){lastSvg='';cd.innerHTML='';el.innerHTML='<p class="mut">Nicio dată pentru filtrele alese.</p>';return}
+  const nf=v=>String(Math.round(v*100)/100),unit=mt==='ore'?'ore':'cantitate',col=i=>PAL[i%PAL.length];
+  const W=760,L=56,Tp=16,B=cats.length>6?120:50,perRow=Math.max(1,Math.floor((W-72)/190)),lr=(g2&&ty!=='pie')?Math.ceil(ser.length/perRow):0;
+  const H0=ty==='pie'?Math.max(360,Math.min(cats.length,12)*24+50):(cats.length>6?400:340),H=H0+(lr?lr*20+10:0);
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" style="min-width:${ty==='pie'?560:Math.min(1000,Math.max(520,cats.length*40))}px" font-family="system-ui,sans-serif" font-size="12" fill="currentColor">`;
+  if(ty==='pie'){
+    const sl=cats.slice(0,11).map(c=>[c,T[c]]),rest=cats.slice(11).reduce((a,c)=>a+T[c],0);if(rest>0)sl.push(['Altele',rest]);
+    const tot=sl.reduce((a,x)=>a+x[1],0)||1,cx=190,cy=H0/2,R=160,r=90;let a0=-Math.PI/2;
+    sl.forEach(([c,v],i)=>{const f=v/tot,a1=a0+f*2*Math.PI;
+      if(f>=0.9999)s+=`<circle cx="${cx}" cy="${cy}" r="${(R+r)/2}" fill="none" stroke="${col(i)}" stroke-width="${R-r}"><title>${esc(c)}: ${nf(v)}</title></circle>`;
+      else{const P=(a,q)=>[cx+q*Math.cos(a),cy+q*Math.sin(a)],lg=f>0.5?1:0,p1=P(a0,R),p2=P(a1,R),p3=P(a1,r),p4=P(a0,r);
+        s+=`<path d="M${p1} A${R} ${R} 0 ${lg} 1 ${p2} L${p3} A${r} ${r} 0 ${lg} 0 ${p4} Z" fill="${col(i)}"><title>${esc(c)}: ${nf(v)} (${Math.round(f*100)}%)</title></path>`}
+      s+=`<rect x="400" y="${24+i*24}" width="12" height="12" fill="${col(i)}"/><text x="418" y="${34+i*24}">${esc(c.slice(0,34))} — ${nf(v)} (${Math.round(f*100)}%)</text>`;a0=a1});
+    s+=`<text x="${cx}" y="${cy+6}" text-anchor="middle" font-size="18" font-weight="700">${nf(tot)}</text>`;
+  }else{
+    const ph=H0-Tp-B,mx=Math.max(1e-9,...cats.map(c=>ty==='bar'?T[c]:Math.max(...ser.map(b=>A[c][b]||0))));
+    const nice=m=>{const p=Math.pow(10,Math.floor(Math.log10(m))),f=m/p;return(f<=1?1:f<=2?2:f<=5?5:10)*p},st=nice(mx/5),top=Math.ceil(mx/st-1e-9)*st,Y=v=>Tp+ph-(v/top)*ph,band=(W-L-16)/cats.length;
+    s+=`<text x="4" y="12" font-size="11" opacity=".7">${unit}</text>`;
+    for(let v=0;v<=top+st/2;v+=st)s+=`<line x1="${L}" x2="${W-16}" y1="${Y(v)}" y2="${Y(v)}" stroke="currentColor" stroke-opacity=".15"/><text x="${L-6}" y="${Y(v)+4}" text-anchor="end">${nf(v)}</text>`;
+    cats.forEach((c,i)=>{const x=L+i*band+band/2,t=esc(c.length>22?c.slice(0,21)+'…':c);s+=cats.length>6?`<text transform="translate(${x},${Tp+ph+14}) rotate(-40)" text-anchor="end">${t}</text>`:`<text x="${x}" y="${Tp+ph+16}" text-anchor="middle">${t}</text>`});
+    if(ty==='bar')cats.forEach((c,i)=>{let acc=0;const bw=Math.min(60,band*0.7),x=L+i*band+(band-bw)/2;
+      ser.forEach((b,j)=>{const v=A[c][b]||0;if(!v)return;const y0=Y(acc+v),h=Y(acc)-y0;s+=`<rect x="${x}" y="${y0}" width="${bw}" height="${Math.max(h,0.5)}" fill="${col(g2?j:0)}"><title>${esc(c)}${g2?' · '+esc(b):''}: ${nf(v)}</title></rect>`;acc+=v});
+      if(cats.length<=24)s+=`<text x="${x+bw/2}" y="${Y(T[c])-4}" text-anchor="middle" font-size="11">${nf(T[c])}</text>`});
+    else ser.forEach((b,j)=>{const pts=cats.map((c,i)=>[L+i*band+band/2,Y(A[c][b]||0),A[c][b]||0]);
+      s+=`<polyline fill="none" stroke="${col(j)}" stroke-width="2.5" points="${pts.map(p=>p[0]+','+p[1]).join(' ')}"/>`+pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="${col(j)}"><title>${esc(cats[i])}${g2?' · '+esc(b):''}: ${nf(p[2])}</title></circle>`).join('')});
+    if(g2)ser.forEach((b,j)=>{const x=L+(j%perRow)*190,y=H0+14+Math.floor(j/perRow)*20;s+=`<rect x="${x}" y="${y-10}" width="12" height="12" fill="${col(j)}"/><text x="${x+18}" y="${y}">${esc(b.slice(0,24))}</text>`});
+  }
+  s+='</svg>';lastSvg=s;el.innerHTML=s;
+  const note=mt==='mat'?`<p class="mut">Materialul este contorizat pe șantier, nu pe angajat; filtrul de angajat nu se aplică. ${(g1!=='mat'&&g2!=='mat'&&$('#fm').value==='*')?'Atenție: se adună materiale cu unități diferite; alege un material pentru valori comparabile.':''}</p>`:'';
+  cd.innerHTML=note+`<table><tr><th>${GL[g1]}</th>${g2?ser.map(b=>`<th>${esc(b)}</th>`).join(''):''}<th>${mt==='ore'?'Ore':'Cantitate'}</th></tr>${cats.map(c=>`<tr><td>${esc(c)}</td>${g2?ser.map(b=>`<td>${A[c][b]?nf(A[c][b]):''}</td>`).join(''):''}<td><b>${nf(T[c])}</b></td></tr>`).join('')}${mt==='ore'?`<tr style="font-weight:700;border-top:2px solid var(--bd)"><td>Total</td>${g2?ser.map(b=>`<td>${nf(SR[b])}</td>`).join(''):''}<td>${nf(cats.reduce((a,c)=>a+T[c],0))}</td></tr>`:''}</table>`;
+}
+function repRows(){
+  const fe=$('#fe').value,fs=$('#fs').value,d1=$('#fd1').value,d2=$('#fd2').value,fo=($('#fo').value||'').trim().toLowerCase(),fm=$('#fm').value,out=[];
+  S.entries.forEach(e=>{if(fs!=='*'&&e.site!==fs)return;if(d1&&e.date<d1)return;if(d2&&e.date>d2)return;if(fo&&!(e.ops||'').toLowerCase().includes(fo))return;if(fm&&fm!=='*'&&!(e.mats||[]).some(m=>m.code===fm))return;
+    (e.crew||[{id:e.user,name:e.userName,hours:e.hours}]).forEach(c=>{if(!isAdmin()&&c.id!==me.id)return;if(isAdmin()&&fe!=='*'&&c.id!==fe)return;out.push({date:e.date,id:c.id,name:c.name||c.id,site:e.site,hours:c.hours,ops:e.ops})})});
+  return out.sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name));
+}
+function rmodeApply(){
+  const e=rmode==='emp';
+  $('#lfe').style.display=e?'':'none';$('#lfm').style.display=e?'none':'';$('#lcm').style.display='none';
+  if(e){$('#fm').value='*';$('#cm').value='ore'}else{$('#fe').value='*';$('#cm').value='mat'}
+  [...$('#cg').options,...$('#cg2').options].forEach(o=>o.disabled=(e&&o.value==='mat')||(!e&&o.value==='emp'));
+  document.querySelectorAll('[data-a="rm"]').forEach(b=>b.classList.toggle('on',b.dataset.v===rmode));
+  $('#rtt').textContent=e?(isAdmin()?'Raport pe angajați':'Raportul meu de ore'):'Raport pe materiale';
+}
+function matRows(){
+  const fs=$('#fs').value,d1=$('#fd1').value,d2=$('#fd2').value,fo=($('#fo').value||'').trim().toLowerCase(),fm=$('#fm').value,out=[];
+  S.entries.forEach(e=>{if(fs!=='*'&&e.site!==fs)return;if(d1&&e.date<d1)return;if(d2&&e.date>d2)return;if(fo&&!(e.ops||'').toLowerCase().includes(fo))return;
+    (e.mats||[]).forEach(m=>{if(!mat(m.code))return;if(fm!=='*'&&m.code!==fm)return;out.push({code:m.code,qty:m.qty,date:e.date,site:e.site,ops:e.ops})})});
+  return out.sort((a,b)=>a.date.localeCompare(b.date))}
+function matRap(){
+  const el=$('#rp');if(!el)return;const rows=matRows();
+  if(!rows.length){openMat=null;el.innerHTML='<div class="card mut">Nicio înregistrare pentru filtrele alese.</div>';return}
+  const by={};rows.forEach(r=>(by[r.code]=by[r.code]||{code:r.code,rows:[]}).rows.push(r));
+  const qs=p=>p.rows.reduce((a,r)=>a+r.qty,0);
+  if(openMat&&by[openMat]){
+    const p=by[openMat],m=mat(p.code),bs={};p.rows.forEach(r=>bs[r.site]=(bs[r.site]||0)+r.qty);
+    el.innerHTML=`<div class="bar"><button class="sec" data-a="mback">← Sumar materiale</button></div><div class="card"><div class="bar"><h2 style="margin:0">${esc(m.code)} — ${esc(m.name)}</h2><b>${fmt(qs(p))} ${esc(m.unit)}</b></div><p class="mut">${Object.keys(bs).map(s=>esc(locName(s))+': '+fmt(bs[s])+' '+esc(m.unit)).join(' · ')}</p><div class="w"><table><tr><th>Data</th><th>Șantier</th><th>Cantitate folosită</th><th>Operațiuni efectuate</th></tr>${p.rows.map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(locName(r.site))}</td><td>${fmt(r.qty)} ${esc(m.unit)}</td><td style="white-space:normal;min-width:220px">${esc(r.ops)}</td></tr>`).join('')}</table></div></div>`;return}
+  openMat=null;
+  const list=Object.values(by).sort((a,b)=>a.code.localeCompare(b.code));
+  el.innerHTML=`<div class="card"><h2>Sumar materiale folosite</h2><div class="w"><table><tr><th>Cod</th><th>Denumire</th><th>U.M.</th><th>Cantitate folosită</th><th>Șantiere</th><th>Rapoarte</th><th></th></tr>${list.map(p=>{const m=mat(p.code);return `<tr><td>${esc(p.code)}</td><td>${esc(m.name)}</td><td>${esc(m.unit)}</td><td><b>${fmt(qs(p))}</b></td><td style="white-space:normal">${[...new Set(p.rows.map(r=>locName(r.site)))].map(esc).join(', ')}</td><td>${p.rows.length}</td><td><button class="sm" data-a="mopen" data-m="${esc(p.code)}">Deschide</button></td></tr>`}).join('')}</table></div></div>`}
+function rap(){
+  rmodeApply();chart();
+  if(rmode==='mat'){matRap();return}
+  const el=$('#rp');if(!el)return;const rows=repRows();
+  if(!rows.length){openEmp=null;el.innerHTML='<div class="card mut">Nicio înregistrare pentru filtrele alese.</div>';return}
+  const by={};rows.forEach(r=>(by[r.id]=by[r.id]||{id:r.id,name:r.name,rows:[]}).rows.push(r));
+  const hs=p=>p.rows.reduce((a,r)=>a+r.hours,0);
+  if(openEmp&&by[openEmp]){
+    const p=by[openEmp],g={},bs={};
+    p.rows.forEach(r=>{const k=r.date+'|'+r.site,x=g[k]=g[k]||{date:r.date,site:r.site,hours:0,ops:[]};x.hours+=r.hours;x.ops.push(r.ops);bs[r.site]=(bs[r.site]||0)+r.hours});
+    el.innerHTML=`<div class="bar"><button class="sec" data-a="eback">← Sumar angajați</button></div><div class="card"><div class="bar"><h2 style="margin:0">${esc(p.name)}</h2><b>${fmt(hs(p))} ore</b></div><p class="mut">${Object.keys(bs).map(s=>esc(locName(s))+': '+fmt(bs[s])+' h').join(' · ')}</p><div class="w"><table><tr><th>Data</th><th>Șantier</th><th>Ore</th><th>Operațiuni efectuate</th></tr>${Object.values(g).map(x=>`<tr><td>${esc(x.date)}</td><td>${esc(locName(x.site))}</td><td>${fmt(x.hours)}</td><td style="white-space:normal;min-width:220px">${x.ops.map(esc).join('<br>')}</td></tr>`).join('')}</table></div></div>`;
+    return}
+  openEmp=null;
+  const list=Object.values(by).sort((a,b)=>hs(b)-hs(a));
+  el.innerHTML=`<div class="card"><h2>Sumar ore pe angajați</h2><p class="mut">Total: <b>${fmt(rows.reduce((a,r)=>a+r.hours,0))}</b> ore · ${list.length} angajați</p><div class="w"><table><tr><th>Angajat</th><th>Ore lucrate</th><th>Zile lucrate</th><th>Șantiere</th><th></th></tr>${list.map(p=>`<tr><td><b>${esc(p.name)}</b></td><td>${fmt(hs(p))}</td><td>${new Set(p.rows.map(r=>r.date)).size}</td><td style="white-space:normal">${[...new Set(p.rows.map(r=>locName(r.site)))].map(esc).join(', ')}</td><td><button class="sm" data-a="eopen" data-e="${esc(p.id)}">Deschide</button></td></tr>`).join('')}</table></div></div>`;
+}
+function usersT(){
+  $('#ul').innerHTML=`<table><tr><th>Nume</th><th>Utilizator</th><th>Rol</th><th></th></tr>${S.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.id)}</td><td>${u.role==='admin'?'administrator':'angajat'}</td><td><button class="sec sm" data-a="renu" data-u="${esc(u.id)}">Redenumește</button> ${u.id===me.id?'':`<button class="sec sm" data-a="role" data-u="${esc(u.id)}">${u.role==='admin'?'Fă angajat':'Fă administrator'}</button> <button class="sec sm" data-a="delu" data-u="${esc(u.id)}">Șterge</button>`}</td></tr>`).join('')}</table>`;
+}
+const say=(id,t,ok)=>{const e=$(id);if(e){e.textContent=t;e.className=ok?'ok':'bad'}};
+
+document.addEventListener('input',e=>{const t=e.target,i=t.dataset.i;if(i==null)return;if(t.classList.contains('dq'))draft[i].qty=t.value;if(t.classList.contains('dh')){crew[i].hours=t.value;tot()}});
+document.addEventListener('change',e=>{const t=e.target;if(t.classList.contains('dm'))draft[t.dataset.i].code=t.value;if(t.classList.contains('dc'))crew[t.dataset.i].id=t.value});
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,d=b.dataset;if(['addsite','addmat','addstock','order','recv','editmat','setq','delmat','rensite','delsite','role','renu','delu'].includes(a)&&!isAdmin())return;
+  try{
+  if(a==='at'){authTab=d.v;lastKey='';render()}
+  else if(a==='tab'){tab=d.v;openSite=null;openEmp=null;openMat=null;render()}
+  else if(a==='logout'){me=null;editId=null;crew=[{id:'',hours:''}];draft=[{code:'',qty:''}];sset(null);lastKey='';render()}
+  else if(a==='reg'){
+    const n=$('#an').value.trim(),u=sid($('#au').value.toLowerCase()),p=$('#ap').value;
+    if(!n||!u)return say('#am','Completează numele și utilizatorul.');
+    if(p.length<6)return say('#am','Parola trebuie să aibă minim 6 caractere.');
+    if(S.users.some(x=>x.id===u))return say('#am','Utilizatorul există deja.');
+    const salt=crypto.randomUUID(),hash=await sha(salt+p),role=S.users.length?'angajat':'admin';
+    await db.collection('users').doc(u).set({name:n,role,salt,hash});
+    me={id:u,name:n,role};sset(u);lastKey='';render()}
+  else if(a==='login'){
+    const u=S.users.find(x=>x.id===sid($('#au').value.toLowerCase()));
+    if(!u||await sha(u.salt+$('#ap').value)!==u.hash)return say('#am','Utilizator sau parolă greșită.');
+    me=u;sset(u.id);lastKey='';render()}
+  else if(a==='role'){if(!isAdmin())return;const u=S.users.find(x=>x.id===d.u);if(u)await db.collection('users').doc(u.id).update({role:u.role==='admin'?'angajat':'admin'})}
+  else if(a==='rm'){rmode=d.v;openEmp=null;openMat=null;rap()}
+  else if(a==='mopen'){openMat=d.m;rap()}
+  else if(a==='mback'){openMat=null;rap()}
+  else if(a==='eopen'){openEmp=d.e;rap()}
+  else if(a==='eback'){openEmp=null;rap()}
+  else if(a==='opens'){openSite=d.s;sites();window.scrollTo(0,0)}
+  else if(a==='sback'){openSite=null;sites()}
+  else if(a==='rensite'){const s=S.sites.find(x=>x.id===d.s),v=await dlg('Redenumește șantierul',[{label:'Denumire',val:s.name}],'Salvează');if(v&&v[0].trim())await db.collection('sites').doc(s.id).update({name:v[0].trim()})}
+  else if(a==='delsite'){const s=S.sites.find(x=>x.id===d.s);if(S.entries.some(x=>x.site===s.id))return info('Șantierul are rapoarte și nu poate fi șters.');if(S.stock.some(r=>r.loc===s.id&&r.qty))return info('Mută mai întâi materialele de pe șantier în depozit sau pe alt șantier.');if(!await yes('Ștergi șantierul '+s.name+'?','Șterge'))return;for(const r of S.stock.filter(r=>r.loc===s.id))await db.collection('stock').doc(r.id).delete();await db.collection('sites').doc(s.id).delete()}
+  else if(a==='editmat'){const m=mat(d.c),v=await dlg('Modifică materialul '+m.code,[{label:'Denumire',val:m.name},{label:'Unitate de măsură',val:m.unit},{label:'Cantitate comandată',val:m.ordered||0},{label:'Cantitate recepționată',val:m.received||0}],'Salvează');if(!v)return;await db.collection('materials').doc(sid(m.code)).update({name:v[0].trim()||m.name,unit:v[1].trim()||m.unit,ordered:num(v[2]),received:num(v[3])})}
+  else if(a==='setq'){const cur=qtyAt(d.c,d.l),v=await dlg('Corectează cantitatea',[{label:d.c+' în '+locName(d.l)+' — cantitatea corectă',val:cur}],'Salvează');if(v)await setStock(d.c,d.l,num(v[0])-cur)}
+  else if(a==='delmat'){const m=mat(d.c),n=S.entries.filter(e=>(e.mats||[]).some(x=>x.code===m.code)).length;if(!await yes('Ștergi materialul '+m.code+' și stocurile lui?'+(n?' Apare în '+n+' rapoarte (rămân în istoric).':''),'Șterge'))return;for(const r of S.stock.filter(r=>r.code===m.code))await db.collection('stock').doc(r.id).delete();for(const o of S.orders.filter(o=>o.code===m.code))await db.collection('orders').doc(o.id).delete();await db.collection('materials').doc(sid(m.code)).delete()}
+  else if(a==='renu'){const u=S.users.find(x=>x.id===d.u),v=await dlg('Redenumește utilizatorul',[{label:'Nume afișat',val:u.name}],'Salvează');if(v&&v[0].trim())await db.collection('users').doc(u.id).update({name:v[0].trim()})}
+  else if(a==='delu'){const u=S.users.find(x=>x.id===d.u);if(await yes('Ștergi contul '+u.name+'? Rapoartele lui rămân în istoric.','Șterge'))await db.collection('users').doc(u.id).delete()}
+  else if(a==='eent'){const e=S.entries.find(x=>x.id===d.e);if(!e)return;editId=e.id;draft=(e.mats||[]).map(m=>({code:m.code,qty:String(m.qty)}));if(!draft.length)draft=[{code:'',qty:''}];crew=(e.crew||[{id:e.user,hours:e.hours}]).map(c=>({id:c.id,hours:String(c.hours)}));tab='raport';render();$('#rs').value=e.site;$('#rd').value=e.date;$('#ro').value=e.ops;window.scrollTo(0,0)}
+  else if(a==='dent'){const e=S.entries.find(x=>x.id===d.e);if(!e||!(isAdmin()||e.user===me.id)||!await yes('Ștergi raportul din '+e.date+'? Materialele se readaugă în stocul șantierului.','Șterge'))return;await applyDeltas((e.mats||[]).map(m=>[m.code,e.site,m.qty]));await db.collection('entries').doc(e.id).delete();if(editId===e.id)resetForm()}
+  else if(a==='addcrew'){crew.push({id:'',hours:''});rowsSig='';data()}
+  else if(a==='delcrew'){crew.splice(+d.i,1);if(!crew.length)crew.push({id:'',hours:''});rowsSig='';data()}
+  else if(a==='cancel'){resetForm()}
+  else if(a==='addsite'){const n=$('#sn').value.trim();if(!n)return;await db.collection('sites').doc('s'+Date.now().toString(36)).set({name:n});$('#sn').value=''}
+  else if(a==='addmat'){
+    const c=$('#mc').value.trim(),n=$('#mn').value.trim(),u=$('#mu').value.trim();
+    if(!c||!n||!u)return say('#smsg','Completează cod, denumire și U.M.');
+    if(mat(c))return say('#smsg','Codul există deja.');
+    await db.collection('materials').doc(sid(c)).set({code:c,name:n,unit:u,ordered:num($('#mo').value)});
+    ['#mc','#mn','#mu','#mo'].forEach(x=>$(x).value='');say('#smsg','Material adăugat.',1)}
+  else if(a==='ord'){const m=mat(d.c),v=prompt('Cantitate comandată pentru '+m.code+':',m.ordered||0);if(v!==null)await db.collection('materials').doc(sid(m.code)).update({ordered:num(v)})}
+  else if(a==='svgdl'){const dl=window.claude?await claude.use('downloads'):null;if(!dl||!lastSvg)return say('#cmsg','Nu există grafic de descărcat.');const sv=lastSvg.replace(/currentColor/g,'#222').replace(/(<svg[^>]*>)/,'$1<rect width="100%" height="100%" fill="#fff"/>');try{try{await dl.save({filename:'grafic-raport.svg',data:sv})}catch(e3){if(e3&&e3.code==='declined')throw e3;await dl.save({filename:'grafic-raport.html',data:'<!doctype html><meta charset=utf-8><body style="margin:0">'+sv})}say('#cmsg','Fișier salvat.',1)}catch(e2){say('#cmsg',e2&&e2.code==='declined'?'Descărcare anulată.':'Eroare: '+((e2&&e2.message)||e2))}}
+  else if(a==='csv'){const dl=window.claude?await claude.use('downloads'):null;if(!dl)return say('#rpm','Descărcarea nu este disponibilă aici.');if(rmode==='mat'){const mr=matRows();if(!mr.length)return say('#rpm','Nimic de exportat.');const q2=v=>'"'+String(v).replace(/"/g,'""')+'"';const csv2='\ufeff'+['Cod;Denumire;U.M.;Data;Șantier;Cantitate;Operațiuni',...mr.map(r=>[q2(r.code),q2(mat(r.code).name),q2(mat(r.code).unit),r.date,q2(locName(r.site)),String(fmt(r.qty)).replace('.',','),q2(r.ops)].join(';'))].join('\r\n');try{await dl.save({filename:'raport-materiale.csv',data:csv2});say('#rpm','Fișier salvat.',1)}catch(e2){say('#rpm',e2&&e2.code==='declined'?'Descărcare anulată.':'Eroare: '+((e2&&e2.message)||e2))}return}const rs=repRows();if(!rs.length)return say('#rpm','Nimic de exportat.');const q=v=>'"'+String(v).replace(/"/g,'""')+'"';const csv='\ufeff'+['Angajat;Data;Șantier;Ore;Operațiuni',...rs.map(r=>[q(r.name),r.date,q(locName(r.site)),String(fmt(r.hours)).replace('.',','),q(r.ops)].join(';'))].join('\r\n');try{await dl.save({filename:'raport-angajati.csv',data:csv});say('#rpm','Fișier salvat.',1)}catch(e2){say('#rpm',e2&&e2.code==='declined'?'Descărcare anulată.':'Eroare: '+((e2&&e2.message)||e2))}}
+  else if(a==='order'){const no=$('#cno').value.trim()||'Fără număr',m=mat($('#com').value),q=num($('#coq').value);
+    if(!m||q<=0)return say('#smsg','Alege materialul și o cantitate pozitivă.');
+    const id=sid(no)+'__'+sid(m.code),o=S.orders.find(x=>x.id===id);
+    await db.collection('orders').doc(id).set({no,code:m.code,qty:fmt((o?o.qty:0)+q),rec:o?o.rec:0,date:o?o.date:today()});
+    await db.collection('materials').doc(sid(m.code)).update({ordered:fmt((m.ordered||0)+q)});
+    $('#coq').value='';say('#smsg','Comanda '+no+': adăugat '+fmt(q)+' '+m.code+' în Comandată.',1)}
+  else if(a==='order_old'){const m=mat($('#com').value),q=num($('#coq').value);if(!m||q<=0)return say('#smsg','Alege materialul și o cantitate pozitivă.');await db.collection('materials').doc(sid(m.code)).update({ordered:fmt((m.ordered||0)+q)});$('#coq').value='';say('#smsg','Adăugat '+fmt(q)+' în Comandată pentru '+m.code+'.',1)}
+  else if(a==='recv'){const rv=$('#rcm').value,lm=rv.startsWith('leg::')?mat(rv.slice(5)):null,o=lm?{id:null,no:'Fără număr',code:lm.code,qty:legacy(lm),rec:0}:S.orders.find(x=>x.id===rv),m=o&&mat(o.code);if(!o||!m)return say('#smsg','Alege comanda.');
+    const rem=o.qty-o.rec,qv=$('#rcq').value.trim(),q=qv?num(qv):rem;
+    if(q<=0)return say('#smsg','Cantitatea trebuie să fie pozitivă.');const dt=$('#rdt').value,dn=$('#rdn').value.trim();if(!dt||!dn)return say('#smsg','Alege tipul documentului (bon, chitanță, factură) și scrie numărul lui.');if(q>rem+1e-9)return say('#smsg','Cantitatea depășește ce a rămas de recepționat pe comanda '+o.no+' ('+fmt(rem)+').');
+    await setStock(m.code,'dep',q);await logMove({code:m.code,qty:q,to:'dep',type:'receptie',order:o.no,doc:dt+' nr. '+dn});
+    if(o.id)await db.collection('orders').doc(o.id).update({rec:fmt(o.rec+q),docs:[...(o.docs||[]),{doc:dt+' nr. '+dn,qty:q,date:today()}]});
+    await db.collection('materials').doc(sid(m.code)).update({ordered:Math.max(0,fmt((m.ordered||0)-q)),received:fmt((m.received||0)+q)});
+    $('#rcq').value='';$('#rdn').value='';say('#smsg','Comanda '+o.no+': recepționat '+fmt(q)+' '+m.code+' în Depozit.',1)}
+  else if(a==='recv_old'){const m=mat($('#rcm').value),q=num($('#rcq').value);if(!m||q<=0)return say('#smsg','Alege materialul și o cantitate pozitivă.');if(q>(m.ordered||0))return say('#smsg','Cantitatea depășește ce e comandat ('+fmt(m.ordered||0)+').');await setStock(m.code,'dep',q);await db.collection('materials').doc(sid(m.code)).update({ordered:fmt((m.ordered||0)-q),received:fmt((m.received||0)+q)});$('#rcq').value='';say('#smsg','Mutat '+fmt(q)+' din Comandată în Recepționată pentru '+m.code+' și adăugat în stoc ('+'Depozit'+').',1)}
+  else if(a==='addstock'){
+    const c=$('#im').value,l=$('#il').value,q=num($('#iq').value);
+    if(!c||!l||q<=0)return say('#smsg','Alege materialul, locația și o cantitate pozitivă.');const dt=$('#idt').value,dn=$('#idn').value.trim();if(!dt||!dn)return say('#smsg','Alege tipul documentului (bon, chitanță, factură) și scrie numărul lui.');
+    await setStock(c,l,q);await logMove({code:c,qty:q,to:l,type:'achizitie',doc:dt+' nr. '+dn});await db.collection('materials').doc(sid(c)).update({received:fmt((mat(c).received||0)+q)});$('#iq').value='';$('#idn').value='';say('#smsg','Stoc actualizat.',1)}
+  else if(a==='move'){
+    const c=$('#mm').value,f=$('#mf').value,t=$('#mt').value,q=num($('#mq').value);
+    if(!c||!f||!t||q<=0)return say('#smsg3','Completează toate câmpurile.');
+    if(f===t)return say('#smsg3','Locațiile trebuie să fie diferite.');
+    if(q>qtyAt(c,f))return say('#smsg3','Stoc insuficient în '+locName(f)+' (disponibil: '+fmt(qtyAt(c,f))+').');
+    await applyDeltas([[c,f,-q],[c,t,q]]);await logMove({code:c,qty:q,from:f,to:t,type:'mutare'});$('#mq').value='';say('#smsg3','Mutat '+fmt(q)+' din '+locName(f)+' în '+locName(t)+'.',1)}
+  else if(a==='move_old'){
+    const c=$('#mm').value,f=$('#mf').value,t=$('#mt').value,q=num($('#mq').value);
+    if(!c||!f||!t||q<=0)return say('#smsg','Completează toate câmpurile.');
+    if(f===t)return say('#smsg','Locațiile trebuie să fie diferite.');
+    if(q>qtyAt(c,f))return say('#smsg','Stoc insuficient în '+locName(f)+' (disponibil: '+fmt(qtyAt(c,f))+').');
+    await setStock(c,f,-q);await setStock(c,t,q);$('#mq').value='';say('#smsg','Mutat '+fmt(q)+' din '+locName(f)+' în '+locName(t)+'.',1)}
+  else if(a==='addrow'){draft.push({code:'',qty:''});rowsSig='';data()}
+  else if(a==='delrow'){draft.splice(+d.i,1);if(!draft.length)draft.push({code:'',qty:''});rowsSig='';data()}
+  else if(a==='save'){
+    const site=$('#rs').value,ops=$('#ro').value.trim(),date=$('#rd').value;
+    const cr=crew.filter(c=>c.id&&num(c.hours)>0).map(c=>({id:c.id,name:(S.users.find(u=>u.id===c.id)||{}).name||c.id,hours:num(c.hours)}));
+    const ms=draft.filter(r=>r.code&&num(r.qty)>0).map(r=>({code:r.code,qty:num(r.qty)}));
+    const bad=[];if(!site)bad.push('șantierul');if(!date)bad.push('data');if(!cr.length&&!crew.some(c=>c.id||num(c.hours)))bad.push('cel puțin un angajat cu ore');if(!ops)bad.push('descrierea operațiunilor');crew.forEach((c,i)=>{if((c.id&&!(num(c.hours)>0))||(!c.id&&num(c.hours)>0))bad.push('angajatul de pe rândul '+(i+1)+' (alege angajatul ȘI scrie orele, mai mari ca 0)')});draft.forEach((r,i)=>{if((r.code&&!(num(r.qty)>0))||(!r.code&&num(r.qty)>0))bad.push('materialul de pe rândul '+(i+1)+' (alege materialul ȘI scrie cantitatea, sau șterge rândul cu ✕)')});
+    if(bad.length)return say('#rmsg','Lipsește: '+bad.join('; ')+'.');
+    if(new Set(cr.map(c=>c.id)).size<cr.length)return say('#rmsg','Un angajat apare de două ori.');
+    const old=editId?S.entries.find(x=>x.id===editId):null;
+    const avail=c=>qtyAt(c,site)+(old&&old.site===site?(old.mats||[]).filter(m=>m.code===c).reduce((s,m)=>s+m.qty,0):0);
+    const need={};ms.forEach(m=>need[m.code]=(need[m.code]||0)+m.qty);
+    const short=Object.keys(need).filter(c=>need[c]>avail(c)).map(c=>c+' (disponibil '+fmt(avail(c))+')');
+    const sg=short.join('|');if(short.length&&warned!==sg){warned=sg;$('#rsave').textContent='Salvează oricâum';return say('#rmsg','Stoc insuficient pe șantier pentru: '+short.join(', ')+'. Apasă „Salvează oricâum” ca să continui (stocul va deveni negativ) sau mută/adaugă materialul înainte.')}
+    short.length=0;
+    if(short.length&&!confirm('Stoc insuficient pe șantier pentru: '+short.join(', ')+'. Salvezi oricum? Stocul va deveni negativ.'))return;
+    await applyDeltas([...(old?(old.mats||[]).map(m=>[m.code,old.site,m.qty]):[]),...ms.map(m=>[m.code,site,-m.qty])]);
+    await db.collection('entries').doc(editId||'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)).set({user:old?old.user:me.id,userName:old?old.userName:me.name,site,date,hours:cr.reduce((a,c)=>a+c.hours,0),crew:cr,ops,mats:ms,ts:old?old.ts:new Date().toISOString()});
+    const was=!!old;resetForm();say('#rmsg',was?'Raport modificat.':'Raport salvat.',1)}
+  else if(a==='save_old'){
+    const site=$('#rs').value,hours=num($('#rh').value),ops=$('#ro').value.trim(),date=$('#rd').value;
+    const ms=draft.filter(r=>r.code&&num(r.qty)>0).map(r=>({code:r.code,qty:num(r.qty)}));
+    if(!site||!date||hours<=0||!ops)return say('#rmsg','Alege șantierul, data, orele și descrie operațiunile.');
+    const short=ms.filter(m=>m.qty>qtyAt(m.code,site)).map(m=>m.code+' (rămas '+fmt(qtyAt(m.code,site))+')');
+    if(short.length&&!confirm('Stoc insuficient pe șantier pentru: '+short.join(', ')+'. Salvezi oricum? Stocul va deveni negativ.'))return;
+    await db.collection('entries').doc('e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)).set({user:me.id,userName:me.name,site,date,hours,ops,mats:ms,ts:new Date().toISOString()});
+    for(const m of ms)await setStock(m.code,site,-m.qty);
+    draft=[{code:'',qty:''}];$('#rh').value='';$('#ro').value='';rowsSig='';data();say('#rmsg','Raport salvat.',1)}
+  }catch(err){console.error(err);const m=$('#rmsg')||$('#smsg')||$('#am');if(m)say('#'+m.id,'Eroare: '+(err.message||err))}
+});
+init();
+</script></body></html>
